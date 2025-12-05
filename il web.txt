@@ -1,0 +1,906 @@
+if (!defined('IL_PROMPTS_LOADED')) {
+
+    define('IL_PROMPTS_LOADED', true);
+
+    // --- CONFIGURATION ---
+    define('IL_COMPARISON_TOOL_TEMPLATE_ID', '101651'); // <--- UPDATE THIS
+
+    /**
+     * Checks if the current user has an active premium plan.
+     */
+    function il_is_user_premium() {
+        if (!is_user_logged_in()) {
+            return false;
+        }
+        $status = get_user_meta(get_current_user_id(), 'il_premium_plan_status', true);
+        return $status === 'active';
+    }
+
+    /**
+     * Gets the prompt limit for the current user based on their plan.
+     */
+    function il_get_user_prompt_limit() {
+        if (il_is_user_premium()) {
+            return 'Unlimited';
+        }
+        $options = get_option('il_premium_sync_settings');
+        return isset($options['free_prompt_limit']) ? intval($options['free_prompt_limit']) : 30;
+    }
+    
+    /**
+     * Helper function to get language context and internationalization strings.
+     */
+    function il_get_language_context_and_strings()
+    {
+        static $context = null;
+        if ($context !== null) return $context;
+
+        $is_fr_page = (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], '/fr/') === 0);
+
+        $i18n_strings = [
+            'en' => [
+                'copy' => 'Copy', 'copied' => 'Copied!', 'save' => 'Save', 'saving' => 'Saving...',
+                'saved' => 'Saved!', 'edit' => 'Edit', 'delete' => 'Delete', 'favourite' => 'Favourite',
+                'unfavourite' => 'Unfavourite', 'confirm_delete' => 'Are you sure?', 'save_changes' => 'Save Changes',
+                'reset' => 'Reset', 'cancel' => 'Cancel', 'updated_success' => 'Updated!',
+                'login_prompt_save' => 'Copied! <a href="{login_url}" class="il-flash-link">Log in</a> or <a href="{register_url}" class="il-flash-link">Register</a> to save prompts.',
+                'view_dashboard' => 'View Dashboard',
+                'limit_reached_manage_dashboard' => 'Prompt limit reached. Manage in <a href="{dashboard_url}#prompt-library" class="il-flash-link">Dashboard</a>.',
+                'save_failed' => 'Save failed', 'save_error' => 'Save Error', 'delete_failed' => 'Delete failed',
+                'delete_error' => 'Delete Error', 'update_failed' => 'Update Failed.', 'update_error' => 'Update Error',
+                'deleting' => 'Deleting...', 'nothing_to_copy' => 'Nothing to copy: prompt is empty.',
+                'nothing_to_save' => 'Nothing to save: prompt is empty.', 'prompt_empty_error' => 'Prompt cannot be empty.',
+                'no_prompts_cta' => 'No saved prompts. Visit our <a href="{prompt_library_url}" target="_blank" class="il-flash-link">Prompt Library</a> to start saving curated prompts!',
+                'no_match_search' => 'No prompts match your search or filters.', 'no_prompts_in_origin' => 'No prompts saved from this origin yet.',
+                'login_to_view_dashboard' => 'Please <a href="{login_url}">log in</a> or <a href="{register_url}">register</a> to view your dashboard.',
+                'search_all_prompts' => 'Search prompts...', 'my_saved_prompts' => 'My Saved Prompts',
+                'my_prompt_library_tab' => 'My Prompt Library', 'comparison_tool_tab' => 'Comparison Tool',
+                'ai_tools_comparison_title' => 'AI Tools Comparison', 'comparison_tool_not_configured' => 'Comparison tool not configured.',
+                'prompt_limit_ajax_error' => 'Prompt limit reached. Please upgrade for unlimited prompts.',
+                'filter_by_category' => 'All Categories', 'filter_favourites' => 'Show Favourites',
+                'free_plan' => 'Free Plan', 'premium_plan' => 'Premium Plan',
+                'upgrade_cta_title' => 'Go Beyond the Limit!',
+                'upgrade_cta_desc' => 'Upgrade to Premium to unlock unlimited prompt saving, cross-device sync with our Chrome extension, and more advanced features.',
+                'upgrade_now' => 'Upgrade Now',
+            ],
+            'fr' => [
+                'copy' => 'Copier', 'copied' => 'Copié !', 'save' => 'Sauvegarder', 'saving' => 'Sauvegarde...',
+                'saved' => 'Sauvegardé !', 'edit' => 'Modifier', 'delete' => 'Supprimer', 'favourite' => 'Favori',
+                'unfavourite' => 'Retirer des favoris', 'confirm_delete' => 'Êtes-vous sûr(e) ?', 'save_changes' => 'Enregistrer',
+                'reset' => 'Réinitialiser', 'cancel' => 'Annuler', 'updated_success' => 'Mis à jour !',
+                'login_prompt_save' => 'Copié ! <a href="{login_url}" class="il-flash-link">Connectez-vous</a> ou <a href="{register_url}" class="il-flash-link">Inscrivez-vous</a> pour sauvegarder.',
+                'view_dashboard' => 'Voir Tableau de Bord',
+                'limit_reached_manage_dashboard' => 'Limite de prompts atteinte. Gérez dans <a href="{dashboard_url}#prompt-library" class="il-flash-link">Tableau de Bord</a>.',
+                'save_failed' => 'Échec sauvegarde', 'save_error' => 'Erreur sauvegarde', 'delete_failed' => 'Échec suppression',
+                'delete_error' => 'Erreur suppression', 'update_failed' => 'Échec mise à jour.', 'update_error' => 'Erreur mise à jour',
+                'deleting' => 'Suppression...', 'nothing_to_copy' => 'Rien à copier : le prompt est vide.',
+                'nothing_to_save' => 'Rien à sauvegarder : le prompt est vide.', 'prompt_empty_error' => 'Le prompt ne peut pas être vide.',
+                'no_prompts_cta' => 'Aucun prompt sauvegardé. Visitez notre <a href="{prompt_library_url}" target="_blank" class="il-flash-link">Bibliothèque de Prompts</a> pour commencer à sauvegarder !',
+                'no_match_search' => 'Aucun prompt ne correspond à votre recherche ou filtres.',
+                'no_prompts_in_origin' => 'Aucun prompt sauvegardé depuis cette origine pour le moment.',
+                'login_to_view_dashboard' => 'Veuillez vous <a href="{login_url}">connecter</a> ou vous <a href="{register_url}">inscrire</a> pour voir votre tableau de bord.',
+                'search_all_prompts' => 'Rechercher des prompts...', 'my_saved_prompts' => 'Mes Prompts Sauvegardés',
+                'my_prompt_library_tab' => 'Ma Bibliothèque de Prompts', 'comparison_tool_tab' => 'Outil de Comparaison',
+                'ai_tools_comparison_title' => 'Comparaison d\'Outils IA', 'comparison_tool_not_configured' => 'Outil de comparaison non configuré.',
+                'prompt_limit_ajax_error' => 'Limite de prompts atteinte. Passez à Premium pour des prompts illimités.',
+                'filter_by_category' => 'Toutes catégories', 'filter_favourites' => 'Afficher les favoris',
+                'free_plan' => 'Plan Gratuit', 'premium_plan' => 'Plan Premium',
+                'upgrade_cta_title' => 'Dépassez la Limite !',
+                'upgrade_cta_desc' => 'Passez à Premium pour débloquer la sauvegarde illimitée de prompts, la synchronisation multi-appareils avec notre extension Chrome, et plus encore.',
+                'upgrade_now' => 'Mettre à Niveau',
+            ]
+        ];
+        $current_lang_code = $is_fr_page ? 'fr' : 'en';
+        $context = [
+            'is_fr_page' => $is_fr_page, 'i18n_strings' => $i18n_strings, 'current_lang_code' => $current_lang_code,
+            't' => function ($key, $replacements = []) use ($i18n_strings, $current_lang_code) {
+                $string = $i18n_strings[$current_lang_code][$key] ?? $i18n_strings['en'][$key] ?? $key;
+                foreach ($replacements as $placeholder => $value) {
+                    $string = str_replace('{' . $placeholder . '}', $value, $string);
+                }
+                return $string;
+            }
+        ];
+        return $context;
+    }
+
+    /**
+     * Renders the upgrade to premium Call To Action block.
+     */
+    function il_render_upgrade_cta() {
+        $t = il_get_language_context_and_strings()['t'];
+        ob_start();
+        ?>
+        <div class="il-upgrade-cta">
+            <div class="il-cta-icon">✨</div>
+            <h3><?php echo esc_html($t('upgrade_cta_title')); ?></h3>
+            <p><?php echo esc_html($t('upgrade_cta_desc')); ?></p>
+            <a href="https://intellectualead.com/pricing" class="il-cta-button" target="_blank"><?php echo esc_html($t('upgrade_now')); ?></a>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Renders a single prompt list item (<li>).
+     */
+    function il_render_prompt_item_li($prompt_data)
+    {
+        $t = il_get_language_context_and_strings()['t'];
+        $prompt_text = $prompt_data['text'] ?? '';
+        $original_idx = $prompt_data['original_index'] ?? -1;
+        $prompt_item_id_base = 'user-prompt-item-' . esc_attr($original_idx);
+        $prompt_display_category_tag = $prompt_data['category'] ?? '';
+        $is_favourite = !empty($prompt_data['is_favourite']);
+        $favourite_class = $is_favourite ? 'is-favourite' : '';
+        $favourite_title = $is_favourite ? $t('unfavourite') : $t('favourite');
+
+        ob_start();
+        ?>
+        <li class="il-saved-prompt-item <?php echo $favourite_class; ?>" id="<?php echo $prompt_item_id_base; ?>"
+            data-prompt-text="<?php echo esc_attr(strtolower($prompt_text)); ?>"
+            data-prompt-category="<?php echo esc_attr(strtolower($prompt_display_category_tag)); ?>"
+            data-prompt-favourite="<?php echo $is_favourite ? 'true' : 'false'; ?>">
+
+            <div class="il-prompt-item-header">
+                <?php if (!empty($prompt_display_category_tag)): ?>
+                    <div class="il-prompt-category"><?php echo esc_html($prompt_display_category_tag); ?></div>
+                <?php endif; ?>
+                <button type="button" class="il-favourite-btn" title="<?php echo esc_attr($favourite_title); ?>" onclick="IL_PROMPT_HANDLERS.toggleFavourite(event, <?php echo esc_js($original_idx); ?>)">
+                    <span class="dashicons dashicons-star-filled"></span>
+                    <span class="dashicons dashicons-star-empty"></span>
+                </button>
+            </div>
+            
+            <pre class="prompt-box" id="text-for-<?php echo $prompt_item_id_base; ?>"><?php echo esc_html($prompt_text); ?></pre>
+            <textarea class="prompt-edit-area" style="display:none;"></textarea>
+
+            <div class="il-buttons">
+                <button type="button" class="il-copy" onclick="IL_PROMPT_HANDLERS.copyPrompt(event, 'text-for-<?php echo esc_js($prompt_item_id_base); ?>')"><span class="dashicons dashicons-clipboard"></span><span><?php echo esc_html($t('copy')); ?></span></button>
+                <button type="button" class="il-edit" onclick="IL_PROMPT_HANDLERS.editPrompt(event, <?php echo esc_js($original_idx); ?>)"><span class="dashicons dashicons-edit"></span><span><?php echo esc_html($t('edit')); ?></span></button>
+                <button type="button" class="il-delete" onclick="IL_PROMPT_HANDLERS.deletePrompt(event, <?php echo esc_js($original_idx); ?>)"><span class="dashicons dashicons-trash"></span><span><?php echo esc_html($t('delete')); ?></span></button>
+            </div>
+
+            <div class="il-edit-action-buttons" style="display:none;"></div>
+        </li>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Shortcode [il_saved_prompts_js]
+     */
+    function il_saved_prompts_js_shortcode_content()
+    {
+        wp_enqueue_script('jquery');
+        wp_enqueue_style('dashicons');
+        
+        $lang_context = il_get_language_context_and_strings();
+        $is_fr_page = $lang_context['is_fr_page'];
+        $i18n_strings = $lang_context['i18n_strings'];
+        $nonce = wp_create_nonce('il_prompt_actions_nonce');
+        
+        $prompt_origin_title = is_singular() ? get_the_title() : 'General';
+        $prompt_origin_id = is_singular() ? get_the_ID() : 0;
+
+        if ($is_fr_page) {
+            $login_url = 'https://intellectualead.com/fr/connexion/';
+            $register_url = 'https://intellectualead.com/fr/inscription/';
+            $dashboard_url = 'https://intellectualead.com/fr/tableau-de-bord/';
+        } else {
+            $login_url = wp_login_url(get_permalink());
+            $register_url = site_url('/register/');
+            $dashboard_url = home_url('/member-dashboard/');
+        }
+        
+        if (function_exists('um_get_core_page')) {
+            if ($login_page_id = um_get_option('core_login')) $login_url = get_permalink($login_page_id);
+            if ($register_page_id = um_get_option('core_register')) $register_url = get_permalink($register_page_id);
+            if ($dashboard_page_id = um_get_option('core_user')) $dashboard_url = get_permalink($dashboard_page_id);
+        }
+
+        if(empty($dashboard_url)) {
+            $dashboard_page = get_page_by_path('member-dashboard');
+            if($dashboard_page) $dashboard_url = get_permalink($dashboard_page->ID);
+        }
+
+        ob_start();
+        ?>
+        <style>
+            .il-prompt-section-wrapper { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; margin-top: 20px; margin-bottom: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: box-shadow 0.3s ease-in-out; }
+            .il-prompt-section-wrapper:hover { box-shadow: 0 6px 16px rgba(0,0,0,0.08); }
+            .il-styled-prompt-pre { background-color: #ffffff; border: 1px solid #ced4da; border-radius: 6px; padding: 15px 20px; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; font-size: 15px; line-height: 1.65; color: #212529; white-space: pre-wrap; word-wrap: break-word; margin: 0 0 18px 0; overflow-x: auto; }
+            .il-prompt-buttons-container { margin-top: 0; }
+            .il-prompt-buttons-container .il-buttons { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+            .il-prompt-buttons-container .il-buttons button { padding: 10px 18px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid transparent; text-decoration: none; line-height: 1.4; transition: all 0.2s ease-in-out; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+            .il-prompt-buttons-container .il-buttons button:hover { transform: translateY(-2px); box-shadow: 0 3px 8px rgba(0,0,0,0.1); }
+            .il-prompt-buttons-container .il-buttons button:active { transform: translateY(0px); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+            .il-prompt-buttons-container .il-buttons button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
+            .il-prompt-buttons-container .il-buttons button .dashicons { font-size: 18px; line-height: 1; height: 18px; width: 18px; }
+            .il-prompt-buttons-container .il-buttons .il-copy { background-color: #28a745; color: #fff; border-color: #28a745; }
+            .il-prompt-buttons-container .il-buttons .il-copy:hover { background-color: #218838; border-color: #1e7e34; }
+            .il-prompt-buttons-container .il-buttons .il-save { background-color: #007bff; color: #fff; border-color: #007bff; }
+            .il-prompt-buttons-container .il-buttons .il-save:hover { background-color: #0069d9; border-color: #0062cc; }
+            .il-prompt-buttons-container .il-buttons button .il-flash-link { color: inherit !important; text-decoration: underline !important; font-weight: 600 !important; background: none !important; padding: 0 !important; border: none !important; display: inline !important; margin: 0 3px !important; }
+            .il-prompt-buttons-container .il-buttons button .il-flash-link:hover { opacity: 0.85; }
+            :root { --il-primary-color: #007bff; --il-border-color: #dee2e6; --il-background-light: #f8f9fa; --il-background-white: #ffffff; --il-text-color: #212529; --il-text-muted: #6c757d; --il-font-sans-serif: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; --il-font-monospace: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; --il-border-radius: 0.5rem; --il-box-shadow: 0 4px 12px rgba(0,0,0,0.08); --il-star-color: #ffc107; --il-premium-color: #9c27b0; --il-free-color: #007bff; }
+            .il-user-dashboard { font-family: var(--il-font-sans-serif); background-color: var(--il-background-white); border: 1px solid var(--il-border-color); border-radius: var(--il-border-radius); padding: 25px; margin: 20px 0 25px 0; box-shadow: var(--il-box-shadow); }
+            .il-user-dashboard .il-styled-prompt-pre { background-color: var(--il-background-light); border: 1px solid var(--il-border-color); border-radius: 6px; padding: 15px 20px; font-family: var(--il-font-monospace); font-size: 15px; line-height: 1.65; white-space: pre-wrap; word-break: break-all; margin: 0 0 18px 0; }
+            .il-dashboard-tabs { display: flex; border-bottom: 1px solid var(--il-border-color); margin-bottom: 25px; }
+            .il-dashboard-tabs .il-tab-link { padding: 12px 20px; cursor: pointer; color: var(--il-text-muted); text-decoration: none; font-weight: 600; border: none; border-bottom: 3px solid transparent; margin-bottom: -1px; transition: color 0.2s ease, border-bottom-color 0.2s ease; }
+            .il-dashboard-tabs .il-tab-link:hover { color: var(--il-text-color); }
+            .il-dashboard-tabs .il-tab-link.active { color: var(--il-primary-color); border-bottom-color: var(--il-primary-color); }
+            .il-dashboard-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid var(--il-border-color); flex-wrap: wrap; gap: 10px; }
+            .il-dashboard-header h2 { font-size: 24px; color: var(--il-text-color); margin: 0; }
+            .il-header-meta { display: flex; align-items: center; gap: 15px; }
+            .il-plan-badge { padding: 5px 12px; border-radius: 20px; font-weight: 600; font-size: 13px; color: #fff; }
+            .il-plan-badge.free { background-color: var(--il-free-color); }
+            .il-plan-badge.premium { background: linear-gradient(45deg, #6a11cb, #2575fc); }
+            .il-prompt-count { font-size: 0.9em; color: var(--il-text-muted); font-weight: 500; background: #e9ecef; padding: 4px 8px; border-radius: 4px;}
+            .il-prompt-filters { display: grid; grid-template-columns: 1fr auto auto; gap: 15px; margin-bottom: 25px; align-items: center; }
+            .il-prompt-filters .il-search-wrapper { position: relative; }
+            .il-prompt-filters .dashicons-search { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--il-text-muted); pointer-events: none; }
+            .il-prompt-filters input, .il-prompt-filters select { padding: 10px 15px; border: 1px solid var(--il-border-color); border-radius: 6px; width: 100%; font-size: 15px; transition: border-color 0.2s, box-shadow 0.2s; box-sizing: border-box; }
+            .il-prompt-filters #il-prompt-search { padding-left: 35px; }
+            .il-prompt-filters input:focus, .il-prompt-filters select:focus { border-color: var(--il-primary-color); box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25); outline:none; }
+            .il-favourite-filter { display: flex; align-items: center; gap: 10px; }
+            .il-favourite-filter label { font-weight: 500; color: var(--il-text-color); cursor: pointer; user-select: none; }
+            .il-switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+            .il-switch input { opacity: 0; width: 0; height: 0; }
+            .il-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 24px; }
+            .il-slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+            input:checked + .il-slider { background-color: var(--il-primary-color); }
+            input:checked + .il-slider:before { transform: translateX(20px); }
+            .il-saved-prompt-item { background: var(--il-background-white); border: 1px solid var(--il-border-color); border-left: 4px solid var(--il-border-color); border-radius: 6px; padding: 18px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); transition: all 0.3s ease; }
+            .il-saved-prompt-item:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,0.08); }
+            .il-saved-prompt-item.is-favourite { border-left-color: var(--il-star-color); }
+            .il-prompt-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+            .il-prompt-category { display: inline-block; background-color: #e9ecef; color: #495057; padding: 4px 10px; border-radius: 15px; font-size: 12px; font-weight: 600; }
+            .il-favourite-btn { background: none; border: none; cursor: pointer; color: #ccc; padding: 5px; border-radius: 50%; transition: color 0.2s ease, transform 0.2s ease; }
+            .il-favourite-btn:hover { transform: scale(1.2); }
+            .il-favourite-btn .dashicons-star-empty { display: inline-block; }
+            .il-favourite-btn .dashicons-star-filled { display: none; }
+            .il-saved-prompt-item.is-favourite .il-favourite-btn, .il-favourite-btn:hover { color: var(--il-star-color); }
+            .il-saved-prompt-item.is-favourite .il-favourite-btn .dashicons-star-empty { display: none; }
+            .il-saved-prompt-item.is-favourite .il-favourite-btn .dashicons-star-filled { display: inline-block; }
+            .il-saved-prompt-item .il-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 15px; }
+            .il-saved-prompt-item pre.prompt-box { font-family: var(--il-font-monospace); background: var(--il-background-light); padding:15px; border-radius:6px; border: 1px solid #e9ecef; font-size: 14px; line-height: 1.6; margin: 0 0 15px 0; white-space: pre-wrap; word-break: break-all; }
+            .il-saved-prompt-item textarea.prompt-edit-area { width: 100%; box-sizing: border-box; padding: 15px; margin-bottom: 10px; border: 1px solid #ced4da; border-radius: 6px; font-family: var(--il-font-monospace); font-size: 14px; line-height: 1.6; min-height: 120px; background: #fff; }
+            .il-saved-prompt-item .il-buttons button, .il-saved-prompt-item .il-edit-action-buttons button { padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent; transition: background-color 0.2s ease; }
+            .il-saved-prompt-item .il-buttons .il-copy { background-color: #e8f5e9; color: #2e7d32; }
+            .il-saved-prompt-item .il-buttons .il-copy:hover { background-color: #dcedc8; }
+            .il-saved-prompt-item .il-buttons .il-edit { background-color: #fff8e1; color: #f57f17; }
+            .il-saved-prompt-item .il-buttons .il-edit:hover { background-color: #ffecb3; }
+            .il-saved-prompt-item .il-buttons .il-delete { background-color: #ffebee; color: #c62828; }
+            .il-saved-prompt-item .il-buttons .il-delete:hover { background-color: #ffcdd2; }
+            .il-edit-action-buttons { display: flex; gap: 10px; margin-top: 10px; }
+            .il-edit-action-buttons button { color: #fff; }
+            .il-edit-action-buttons .il-button-secondary { background-color: #6c757d; }
+            .il-edit-action-buttons .il-button-caution { background-color: #fd7e14; }
+            .il-no-prompts-message { padding: 40px 20px; text-align: center; color: var(--il-text-muted); background-color: var(--il-background-light); border-radius: var(--il-border-radius); line-height: 1.7; font-size: 1.1em; border: 2px dashed var(--il-border-color); display: none; }
+            .il-upgrade-cta { text-align: center; padding: 30px; margin: 25px 0; border-radius: var(--il-border-radius); background: linear-gradient(45deg, #fce4ec, #e3f2fd); border: 1px solid #ddd; }
+            .il-upgrade-cta .il-cta-icon { font-size: 40px; }
+            .il-upgrade-cta h3 { font-size: 22px; color: var(--il-text-color); margin: 10px 0; }
+            .il-upgrade-cta p { font-size: 16px; color: var(--il-text-muted); max-width: 600px; margin: 0 auto 20px auto; }
+            .il-upgrade-cta .il-cta-button { background-color: var(--il-primary-color); color: #fff; padding: 12px 25px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block; transition: background-color 0.2s, transform 0.2s; }
+            .il-upgrade-cta .il-cta-button:hover { background-color: #0069d9; transform: translateY(-2px); }
+            
+            /** CSS for Google Connect Warning Modal **/
+            .il-warning-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 99999; opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
+            .il-warning-overlay.visible { opacity: 1; pointer-events: auto; }
+            .il-warning-modal { background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); text-align: center; max-width: 450px; width: 90%; transform: scale(0.9); transition: transform 0.3s ease; }
+            .il-warning-overlay.visible .il-warning-modal { transform: scale(1); }
+            .il-warning-modal h3 { font-size: 22px; margin-top: 0; margin-bottom: 15px; color: #333; }
+            .il-warning-modal p { color: #555; line-height: 1.6; margin-bottom: 20px; }
+            .il-warning-modal p a { color: var(--il-primary-color); text-decoration: underline; font-weight: 600; }
+            .il-warning-modal .il-modal-actions { display: flex; justify-content: center; gap: 15px; }
+            .il-warning-modal .il-modal-btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; transition: background-color 0.2s ease; }
+            .il-warning-modal .il-modal-btn.continue { background-color: #28a745; color: white; }
+            .il-warning-modal .il-modal-btn.continue:hover { background-color: #218838; }
+            .il-warning-modal .il-modal-btn.cancel { background-color: #6c757d; color: white; }
+            .il-warning-modal .il-modal-btn.cancel:hover { background-color: #5a6268; }
+
+        </style>
+        <script>
+        
+        /**
+         * ⚠️ Google Connect Warning Modal Function
+         */
+        function showGoogleConnectWarning(event) {
+            event.preventDefault();
+            const targetUrl = event.currentTarget.href;
+            const passwordResetUrl = '<?php echo esc_url(site_url("/wp-login.php?action=lostpassword")); ?>';
+
+            const overlay = document.createElement('div');
+            overlay.className = 'il-warning-overlay';
+            const modal = document.createElement('div');
+            modal.className = 'il-warning-modal';
+            modal.innerHTML = '<h3>⚠️ Important Notice</h3>' +
+                '<p>If you created an account using Google Connect, you will need to set a password to log in directly to the extension. You can do this from the password reset page.</p>' +
+                '<p><a href="' + passwordResetUrl + '" target="_blank">Click here to set your password</a>.</p>' +
+                '<div class="il-modal-actions">' +
+                    '<button class="il-modal-btn cancel">Cancel</button>' +
+                    '<button class="il-modal-btn continue">Continue to Download</button>' +
+                '</div>';
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            setTimeout(() => overlay.classList.add('visible'), 10);
+
+            const closeModal = () => {
+                overlay.classList.remove('visible');
+                setTimeout(() => document.body.removeChild(overlay), 300);
+            };
+
+            modal.querySelector('.cancel').addEventListener('click', closeModal);
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) closeModal();
+            });
+            modal.querySelector('.continue').addEventListener('click', () => {
+                window.location.href = targetUrl;
+                closeModal();
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            window.ILPrompts = window.ILPrompts || {};
+            Object.assign(window.ILPrompts, {
+                ajax_url: '<?php echo esc_url(admin_url('admin-ajax.php')); ?>',
+                nonce: '<?php echo esc_js($nonce); ?>',
+                is_user_premium: <?php echo il_is_user_premium() ? 'true' : 'false'; ?>,
+                max_prompts: '<?php echo il_get_user_prompt_limit(); ?>',
+                current_category: '<?php echo esc_js($prompt_origin_title); ?>',
+                current_origin_id: <?php echo intval($prompt_origin_id); ?>,
+                is_user_logged_in: <?php echo is_user_logged_in() ? 'true' : 'false'; ?>,
+                login_url: '<?php echo esc_url($login_url); ?>',
+                register_url: '<?php echo esc_url($register_url); ?>',
+                dashboard_url: '<?php echo esc_url($dashboard_url); ?>',
+                i18n: <?php echo json_encode($i18n_strings); ?>
+            });
+
+            const il_t = function(key, replacements = {}) {
+                const lang = ILPrompts.is_fr_page ? 'fr' : 'en';
+                let str = (ILPrompts.i18n[lang] && ILPrompts.i18n[lang][key]) ? ILPrompts.i18n[lang][key] : (ILPrompts.i18n['en'][key] || key);
+                for (const p in replacements) { str = str.replace(new RegExp('{' + p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '}', 'g'), replacements[p]); }
+                return str;
+            };
+
+            const il_flash_button_message = (btn, originalHTML, msgKeyOrHTML, disable, isSuccess, duration, args = {}) => {
+                if (!btn) return;
+                let tempMsg = (typeof msgKeyOrHTML === 'string' && /<[a-z][\s\S]*>/i.test(msgKeyOrHTML)) ? msgKeyOrHTML : il_t(msgKeyOrHTML, args);
+                const icon = btn.querySelector('.dashicons');
+                btn.innerHTML = (icon ? icon.outerHTML : '') + '<span>' + tempMsg + '</span>';
+                if (disable !== undefined) btn.disabled = disable;
+                if (duration > 0) {
+                    setTimeout(() => { btn.innerHTML = originalHTML; if (btn.disabled) btn.disabled = false; }, duration);
+                }
+            };
+            
+            window.IL_PROMPT_HANDLERS = {
+                copyPrompt: (evt, elId) => {
+                    const el = document.getElementById(elId);
+                    if (!el || !el.innerText.trim()) { alert(il_t('nothing_to_copy')); return; }
+                    navigator.clipboard.writeText(el.innerText.trim());
+                    const btn = evt.target.closest('button');
+                    if(btn) il_flash_button_message(btn, btn.innerHTML, 'copied', false, true, 2000);
+                },
+
+                savePrompt: (evt, elId) => {
+                    const btn = evt.target.closest('button');
+                    const el = document.getElementById(elId);
+                    if (!el || !btn || !el.innerText.trim()) { alert(il_t('nothing_to_save')); return; }
+                    const originalHTML = btn.innerHTML;
+
+                    if (!ILPrompts.is_user_logged_in) {
+                        navigator.clipboard.writeText(el.innerText.trim());
+                        const messageArgs = { 
+                            login_url: ILPrompts.login_url, 
+                            register_url: ILPrompts.register_url 
+                        };
+                        const loginMessageHTML = il_t('login_prompt_save', messageArgs);
+                        il_flash_button_message(btn, originalHTML, loginMessageHTML, false, true, 6000);
+                        return;
+                    }
+                    
+                    il_flash_button_message(btn, originalHTML, 'saving', true, true, 0);
+                    const formData = new URLSearchParams({
+                        action: 'il_save_prompt', nonce: ILPrompts.nonce, prompt: el.innerText.trim(),
+                        category: ILPrompts.current_category, origin_title: ILPrompts.current_category,
+                        origin_id: ILPrompts.current_origin_id
+                    });
+
+                    fetch(ILPrompts.ajax_url, { method: 'POST', body: formData })
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.success) {
+                                let dashboardUrl = ILPrompts.dashboard_url;
+                                if (dashboardUrl) {
+                                    let baseMessage = il_t('saved');
+                                    let dashboardLinkText = il_t('view_dashboard');
+                                    let messageWithLink = baseMessage + ' <a href="' + dashboardUrl + '#prompt-library" class="il-flash-link">' + dashboardLinkText + '</a>';
+                                    il_flash_button_message(btn, originalHTML, messageWithLink, false, true, 4000);
+                                } else {
+                                    il_flash_button_message(btn, originalHTML, 'saved', false, true, 2500);
+                                }
+                            } else {
+                                alert(data.data.message || il_t('save_failed'));
+                                il_flash_button_message(btn, originalHTML, 'save_failed', false, false, 3000);
+                            }
+                        }).catch(() => il_flash_button_message(btn, originalHTML, 'save_error', false, false, 3000));
+                },
+
+                deletePrompt: (evt, idx) => {
+                    if (!confirm(il_t('confirm_delete'))) return;
+                    location.href = '#';
+                    const formData = new URLSearchParams({ action: 'il_delete_prompt', nonce: ILPrompts.nonce, prompt_index: idx });
+                    fetch(ILPrompts.ajax_url, { method: 'POST', body: formData })
+                        .then(res => res.json())
+                        .then(data => { if (data.success) { location.reload(); } else { alert(il_t('delete_failed')); } })
+                        .catch(() => alert(il_t('delete_error')));
+                },
+                
+                editPrompt: function(evt, idx) {
+                    const btn = evt.target.closest('button');
+                    const item = btn.closest('.il-saved-prompt-item');
+                    const pre = item.querySelector('pre.prompt-box');
+                    const textarea = item.querySelector('textarea.prompt-edit-area');
+                    
+                    if (textarea.style.display === 'none') {
+                        ILPrompts.originalEditTexts = ILPrompts.originalEditTexts || {};
+                        ILPrompts.originalEditTexts[idx] = pre.innerText;
+                        textarea.value = pre.innerText;
+                        pre.style.display = 'none';
+                        textarea.style.display = 'block';
+                        textarea.focus();
+                        btn.innerHTML = '<span class="dashicons dashicons-yes-alt"></span><span>' + il_t('save_changes') + '</span>';
+                        const actions = item.querySelector('.il-edit-action-buttons');
+                        actions.innerHTML = '<button type="button" onclick="IL_PROMPT_HANDLERS.resetEditPrompt(event, ' + idx + ')">' + il_t('reset') + '</button> ' +
+                                            '<button type="button" onclick="IL_PROMPT_HANDLERS.cancelEditPrompt(event, ' + idx + ')">' + il_t('cancel') + '</button>';
+                        actions.style.display = 'flex';
+                        item.querySelectorAll('.il-buttons .il-copy, .il-buttons .il-delete, .il-favourite-btn').forEach(b => b.style.display = 'none');
+                    } else {
+                        const newText = textarea.value.trim();
+                        if (!newText) {
+                            alert(il_t('prompt_empty_error'));
+                            return;
+                        }
+                        
+                        const originalHTML = btn.innerHTML;
+                        il_flash_button_message(btn, originalHTML, 'saving', true, true, 0);
+                        
+                        const formData = new URLSearchParams({
+                            action: 'il_update_prompt',
+                            nonce: ILPrompts.nonce,
+                            prompt_index: idx,
+                            prompt_text: newText
+                        });
+
+                        const resetUI = (wasSuccess) => {
+                            this.cancelEditPrompt(evt, idx, wasSuccess);
+                        };
+
+                        fetch(ILPrompts.ajax_url, { method: 'POST', body: formData })
+                            .then(response => {
+                                if (!response.ok) {
+                                    throw new Error('Server responded with status: ' + response.status);
+                                }
+                                return response.json();
+                            })
+                            .then(data => {
+                                if (data.success) {
+                                    pre.innerText = newText;
+                                    item.dataset.promptText = newText.toLowerCase();
+                                    resetUI(true);
+                                } else {
+                                    alert(data.data.message || il_t('update_failed'));
+                                    resetUI(false);
+                                }
+                            })
+                            .catch(error => {
+                                console.error("Failed to update prompt:", error);
+                                alert(il_t('update_error') + " Please check the browser console for details.");
+                                resetUI(false);
+                            });
+                    }
+                },
+
+                cancelEditPrompt: (evt, idx, wasSuccess = false) => {
+                    const item = evt.target.closest('.il-saved-prompt-item');
+                    if (!item) return;
+
+                    const pre = item.querySelector('pre.prompt-box');
+                    const textarea = item.querySelector('textarea.prompt-edit-area');
+                    const editBtn = item.querySelector('.il-edit');
+
+                    if (!pre || !textarea || !editBtn) {
+                        console.error("UI reset failed: one or more required elements were not found.");
+                        return;
+                    }
+
+                    textarea.style.display = 'none';
+                    pre.style.display = 'block';
+
+                    if (!wasSuccess && ILPrompts.originalEditTexts && ILPrompts.originalEditTexts[idx]) {
+                        pre.innerText = ILPrompts.originalEditTexts[idx];
+                    }
+                    
+                    editBtn.innerHTML = '<span class="dashicons dashicons-edit"></span><span>' + il_t('edit') + '</span>';
+                    editBtn.disabled = false;
+                    
+                    item.querySelector('.il-edit-action-buttons').style.display = 'none';
+                    item.querySelectorAll('.il-buttons .il-copy, .il-buttons .il-delete, .il-favourite-btn').forEach(b => b.style.display = 'inline-flex');
+                },
+
+                resetEditPrompt: (evt, idx) => {
+                    if (ILPrompts.originalEditTexts && ILPrompts.originalEditTexts[idx]) {
+                        evt.target.closest('.il-saved-prompt-item').querySelector('textarea.prompt-edit-area').value = ILPrompts.originalEditTexts[idx];
+                    }
+                },
+                
+                toggleFavourite: (evt, idx) => {
+                    const btn = evt.target.closest('button');
+                    const item = btn.closest('.il-saved-prompt-item');
+                    const isFav = item.classList.toggle('is-favourite');
+                    item.dataset.promptFavourite = isFav;
+                    btn.setAttribute('title', il_t(isFav ? 'unfavourite' : 'favourite'));
+                    const formData = new URLSearchParams({ action: 'il_toggle_favourite', nonce: ILPrompts.nonce, prompt_index: idx });
+                    fetch(ILPrompts.ajax_url, { method: 'POST', body: formData })
+                        .then(res => res.json())
+                        .then(data => { if (!data.success) item.classList.toggle('is-favourite', !isFav); });
+                }
+            };
+            
+            const applyFilters = () => {
+                const container = document.querySelector('.il-user-saved-prompts-container');
+                if (!container) return;
+                const searchTerm = container.querySelector('#il-prompt-search').value.toLowerCase().trim();
+                const category = container.querySelector('#il-category-filter').value;
+                const showFav = container.querySelector('#il-favourite-filter-toggle').checked;
+                const noResultsMsg = container.querySelector('.il-no-prompts-message');
+                let visibleItems = 0;
+                container.querySelectorAll('.il-saved-prompt-item').forEach(item => {
+                    const matchSearch = item.dataset.promptText.includes(searchTerm);
+                    const matchCat = category === '' || item.dataset.promptCategory === category;
+                    const matchFav = !showFav || item.dataset.promptFavourite === 'true';
+                    if (matchSearch && matchCat && matchFav) {
+                        item.style.display = '';
+                        visibleItems++;
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+                const hasAnyPrompts = container.querySelector('.il-saved-prompt-item');
+                if(noResultsMsg) noResultsMsg.style.display = (visibleItems === 0 && hasAnyPrompts) ? 'block' : 'none';
+            };
+
+            const initializeStandalonePromptButtons = () => {
+                const standaloneButtonContainers = document.querySelectorAll('.il-prompt-buttons-container[data-il-button-set]:not(.il-standalone-initialized)');
+                standaloneButtonContainers.forEach(buttonContainer => {
+                    const promptId = buttonContainer.dataset.promptId;
+                    const promptElement = document.getElementById(promptId);
+                    if (promptElement) {
+                        promptElement.classList.add('il-styled-prompt-pre');
+                        buttonContainer.classList.add('il-standalone-initialized');
+
+                        const copyBtn = buttonContainer.querySelector('.il-copy span:not(.dashicons)');
+                        if(copyBtn) copyBtn.textContent = il_t('copy');
+                        const saveBtn = buttonContainer.querySelector('.il-save span:not(.dashicons)');
+                        if(saveBtn) saveBtn.textContent = il_t('save');
+
+                        if (!promptElement.parentElement || !promptElement.parentElement.classList.contains('il-prompt-section-wrapper')) {
+                            const wrapper = document.createElement('div');
+                            wrapper.className = 'il-prompt-section-wrapper';
+                            if (promptElement.parentNode) {
+                                promptElement.parentNode.insertBefore(wrapper, promptElement);
+                            }
+                            wrapper.appendChild(promptElement);
+                            wrapper.appendChild(buttonContainer);
+                        }
+                    }
+                });
+            };
+
+            initializeStandalonePromptButtons();
+            
+            const tabContainer = document.querySelector('.il-user-dashboard .il-dashboard-tabs');
+            if (tabContainer) {
+                const tabLinks = tabContainer.querySelectorAll('.il-tab-link');
+                const tabContents = document.querySelectorAll('.il-user-dashboard .il-tab-content');
+                const showTab = (tabId) => {
+                    tabContents.forEach(c => c.style.display = c.id === tabId ? 'block' : 'none');
+                    tabLinks.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + tabId));
+                    if (history.pushState) history.pushState(null, null, '#' + tabId);
+                }
+                tabLinks.forEach(link => {
+                    link.addEventListener('click', e => { e.preventDefault(); showTab(link.getAttribute('href').substring(1)); });
+                });
+                const currentHash = window.location.hash.substring(1);
+                if (currentHash && Array.from(tabLinks).some(l => l.getAttribute('href') === '#' + currentHash)) {
+                    showTab(currentHash);
+                } else if(tabLinks.length > 0) {
+                    showTab(tabLinks[0].getAttribute('href').substring(1));
+                }
+            }
+
+            const filterContainer = document.querySelector('.il-prompt-filters');
+            if (filterContainer) {
+                filterContainer.addEventListener('input', applyFilters);
+                filterContainer.addEventListener('change', applyFilters);
+            }
+
+            if (window.MutationObserver && !window.ILStandalonePromptObserver) {
+                window.ILStandalonePromptObserver = true;
+                const observer = new MutationObserver(function(mutationsList) {
+                    for (let mutation of mutationsList) {
+                        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                            if (document.querySelector('.il-prompt-buttons-container[data-il-button-set]:not(.il-standalone-initialized)')) {
+                                initializeStandalonePromptButtons();
+                                break;
+                            }
+                        }
+                    }
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
+            }
+        });
+        </script>
+        <?php
+        return ob_get_clean();
+    }
+    add_shortcode('il_saved_prompts_js', 'il_saved_prompts_js_shortcode_content');
+
+    function il_ajax_save_prompt_handler()
+    {
+        if (!check_ajax_referer('il_prompt_actions_nonce', 'nonce', false)) wp_send_json_error(['message' => 'Security check failed.'], 403);
+        if (!is_user_logged_in()) wp_send_json_error(['message' => 'Not logged in.'], 401);
+        
+        $t = il_get_language_context_and_strings()['t'];
+        $user_id = get_current_user_id();
+        $limit = il_get_user_prompt_limit();
+        $saved_prompts = get_user_meta($user_id, 'il_user_saved_prompts_structured', true) ?: [];
+        
+        $new_prompt_text = sanitize_textarea_field(wp_unslash($_POST['prompt']));
+
+        // --- DUPLICATION PREVENTION ---
+        if (!empty($saved_prompts)) {
+            $last_prompt = end($saved_prompts);
+            // Check if the last saved prompt has the same text and was saved in the last 5 seconds.
+            if (isset($last_prompt['text']) && $last_prompt['text'] === $new_prompt_text &&
+                isset($last_prompt['saved_at']) && (time() - $last_prompt['saved_at']) < 5) {
+                // This is a likely duplicate request, so we ignore it and return success.
+                wp_send_json_success(['message' => $t('saved')]);
+                return;
+            }
+        }
+        // --- END DUPLICATION PREVENTION ---
+
+        if (!il_is_user_premium() && is_numeric($limit) && count($saved_prompts) >= $limit) {
+            wp_send_json_error(['message' => $t('prompt_limit_ajax_error')], 403);
+            return;
+        }
+        if (empty(trim($new_prompt_text))) {
+            wp_send_json_error(['message' => $t('prompt_empty_error')], 400);
+            return;
+        }
+
+        $saved_prompts[] = [
+            'text' => $new_prompt_text,
+            'category' => sanitize_text_field(wp_unslash($_POST['category'])),
+            'saved_at' => time(),
+            'origin_title' => sanitize_text_field(wp_unslash($_POST['origin_title'])),
+            'origin_id' => intval($_POST['origin_id']),
+            'is_favourite' => false
+        ];
+        
+        if (update_user_meta($user_id, 'il_user_saved_prompts_structured', $saved_prompts)) {
+            wp_send_json_success(['message' => $t('saved')]);
+        } else {
+            wp_send_json_error(['message' => $t('save_failed')], 500);
+        }
+    }
+    add_action('wp_ajax_il_save_prompt', 'il_ajax_save_prompt_handler');
+
+    function il_ajax_update_prompt_handler()
+    {
+        if (!check_ajax_referer('il_prompt_actions_nonce', 'nonce', false)) wp_send_json_error(null, 403);
+        if (!is_user_logged_in()) wp_send_json_error(null, 401);
+        $user_id = get_current_user_id();
+        $t = il_get_language_context_and_strings()['t'];
+        $idx = isset($_POST['prompt_index']) && is_numeric($_POST['prompt_index']) ? intval($_POST['prompt_index']) : -1;
+        $text = isset($_POST['prompt_text']) ? trim($_POST['prompt_text']) : '';
+        if ($idx < 0) wp_send_json_error(['message' => 'Invalid index.'], 400);
+        if (empty($text)) wp_send_json_error(['message' => $t('prompt_empty_error')], 400);
+
+        $prompts = get_user_meta($user_id, 'il_user_saved_prompts_structured', true) ?: [];
+        if (!isset($prompts[$idx])) wp_send_json_error(['message' => 'Prompt not found.'], 404);
+
+        $prompts[$idx]['text'] = sanitize_textarea_field($text);
+        $prompts[$idx]['updated_at'] = time();
+
+        if (update_user_meta($user_id, 'il_user_saved_prompts_structured', $prompts)) {
+            wp_send_json_success(['message' => $t('updated_success')]);
+        } else {
+            wp_send_json_error(['message' => $t('update_failed')], 500);
+        }
+    }
+    add_action('wp_ajax_il_update_prompt', 'il_ajax_update_prompt_handler');
+    
+    function il_ajax_delete_prompt_handler()
+    {
+        if (!check_ajax_referer('il_prompt_actions_nonce', 'nonce', false)) wp_send_json_error(null, 403);
+        if (!is_user_logged_in()) wp_send_json_error(null, 401);
+        $user_id = get_current_user_id();
+        $idx = isset($_POST['prompt_index']) && is_numeric($_POST['prompt_index']) ? intval($_POST['prompt_index']) : -1;
+        if ($idx < 0) wp_send_json_error(['message' => 'Invalid index.'], 400);
+
+        $prompts = get_user_meta($user_id, 'il_user_saved_prompts_structured', true) ?: [];
+        if (!isset($prompts[$idx])) wp_send_json_error(['message' => 'Prompt not found.'], 404);
+
+        array_splice($prompts, $idx, 1);
+        
+        $reindexed_prompts = array_values($prompts);
+
+        if (update_user_meta($user_id, 'il_user_saved_prompts_structured', $reindexed_prompts)) {
+            wp_send_json_success();
+        } else {
+            wp_send_json_error(['message' => il_get_language_context_and_strings()['t']('delete_failed')], 500);
+        }
+    }
+    add_action('wp_ajax_il_delete_prompt', 'il_ajax_delete_prompt_handler');
+
+    function il_ajax_toggle_favourite_handler() {
+        if (!check_ajax_referer('il_prompt_actions_nonce', 'nonce', false)) wp_send_json_error(null, 403);
+        if (!is_user_logged_in()) wp_send_json_error(null, 401);
+        $user_id = get_current_user_id();
+        $idx = isset($_POST['prompt_index']) && is_numeric($_POST['prompt_index']) ? intval($_POST['prompt_index']) : -1;
+        if ($idx < 0) wp_send_json_error(['message' => 'Invalid index.'], 400);
+
+        $prompts = get_user_meta($user_id, 'il_user_saved_prompts_structured', true) ?: [];
+        if (!isset($prompts[$idx])) wp_send_json_error(['message' => 'Prompt not found.'], 404);
+        
+        $prompts[$idx]['is_favourite'] = empty($prompts[$idx]['is_favourite']);
+
+        if (update_user_meta($user_id, 'il_user_saved_prompts_structured', $prompts)) {
+            wp_send_json_success(['new_status' => $prompts[$idx]['is_favourite']]);
+        } else {
+            wp_send_json_error(null, 500);
+        }
+    }
+    add_action('wp_ajax_il_toggle_favourite', 'il_ajax_toggle_favourite_handler');
+
+    function il_display_user_dashboard_content_shortcode()
+    {
+        $t = il_get_language_context_and_strings()['t'];
+        if (!is_user_logged_in()) {
+            $login_url = wp_login_url(get_permalink());
+            $register_url = site_url('/register/');
+            if (function_exists('um_get_core_page')) {
+                if ($login_page_id = um_get_option('core_login')) $login_url = get_permalink($login_page_id);
+                if ($register_page_id = um_get_option('core_register')) $register_url = get_permalink($register_page_id);
+            }
+            return '<div class="il-login-prompt">' . $t('login_to_view_dashboard', ['login_url' => esc_url($login_url), 'register_url' => esc_url($register_url)]) . '</div>';
+        }
+
+        ob_start();
+        ?>
+        <div class="il-user-dashboard">
+            <nav class="il-dashboard-tabs">
+                <a href="#prompt-library" class="il-tab-link active"><?php echo esc_html($t('my_prompt_library_tab')); ?></a>
+                <a href="#comparison-tool" class="il-tab-link"><?php echo esc_html($t('comparison_tool_tab')); ?></a>
+            </nav>
+            <div id="prompt-library" class="il-tab-content">
+                <?php echo do_shortcode('[il_user_saved_prompts_list]'); ?>
+            </div>
+            <div id="comparison-tool" class="il-tab-content" style="display:none;">
+                <h2><?php echo esc_html($t('ai_tools_comparison_title')); ?></h2>
+                <?php if (defined('IL_COMPARISON_TOOL_TEMPLATE_ID') && is_numeric(IL_COMPARISON_TOOL_TEMPLATE_ID)) {
+                    echo do_shortcode('[elementor-template id="' . IL_COMPARISON_TOOL_TEMPLATE_ID . '"]');
+                } else {
+                    echo '<p><em>' . esc_html($t('comparison_tool_not_configured')) . '</em></p>';
+                } ?>
+            </div>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+    add_shortcode('il_user_dashboard', 'il_display_user_dashboard_content_shortcode');
+    
+    function il_display_user_saved_prompts_list_shortcode()
+    {
+        if (!is_user_logged_in()) return '';
+        $t = il_get_language_context_and_strings()['t'];
+        $saved_prompts_meta = get_user_meta(get_current_user_id(), 'il_user_saved_prompts_structured', true) ?: [];
+        $is_premium = il_is_user_premium();
+        $limit = il_get_user_prompt_limit();
+        $prompts_by_origin = [];
+        $all_categories = [];
+
+        foreach ($saved_prompts_meta as $index => $prompt_data) {
+            $prompt_data['original_index'] = $index;
+            $origin_title = !empty(trim($prompt_data['origin_title'])) ? $prompt_data['origin_title'] : 'General Prompts';
+            if (!isset($prompts_by_origin[$origin_title])) {
+                $prompts_by_origin[$origin_title] = ['origin_id' => $prompt_data['origin_id'] ?? 0, 'prompts' => []];
+            }
+            $prompts_by_origin[$origin_title]['prompts'][] = $prompt_data;
+            if (!empty($prompt_data['category'])) {
+                $all_categories[strtolower($prompt_data['category'])] = $prompt_data['category'];
+            }
+        }
+        
+        // **REPLACED for PHP Compatibility**
+        uksort($prompts_by_origin, function($a, $b) {
+            if ($a === 'General Prompts') return 1;
+            if ($b === 'General Prompts') return -1;
+            return strcasecmp($a, $b);
+        });
+
+        ksort($all_categories, SORT_STRING | SORT_FLAG_CASE);
+        
+        $prompt_library_url = il_get_language_context_and_strings()['is_fr_page'] ? 'https://intellectualead.com/fr/librairie-de-prompt/' : 'https://intellectualead.com/prompt-library/';
+
+        ob_start();
+        ?>
+        <div class="il-user-saved-prompts-container">
+            <div class="il-dashboard-header">
+                <h2><?php echo esc_html($t('my_saved_prompts')); ?></h2>
+                <div class="il-header-meta">
+                    <span class="il-plan-badge <?php echo $is_premium ? 'premium' : 'free'; ?>"><?php echo esc_html($is_premium ? $t('premium_plan') : $t('free_plan')); ?></span>
+                    <span class="il-prompt-count">(<?php echo count($saved_prompts_meta); ?> / <?php echo is_numeric($limit) ? $limit : '&#8734;'; ?>)</span>
+                </div>
+            </div>
+
+            <?php if (!$is_premium && !empty($saved_prompts_meta)) echo il_render_upgrade_cta(); ?>
+
+            <?php if (!empty($saved_prompts_meta)) : ?>
+            <div class="il-prompt-filters">
+                <div class="il-search-wrapper"><span class="dashicons dashicons-search"></span><input type="text" id="il-prompt-search" placeholder="<?php echo esc_attr($t('search_all_prompts')); ?>"></div>
+                <select id="il-category-filter"><option value=""><?php echo esc_html($t('filter_by_category')); ?></option>
+                    <?php foreach ($all_categories as $key => $display) : ?><option value="<?php echo esc_attr($key); ?>"><?php echo esc_html($display); ?></option><?php endforeach; ?>
+                </select>
+                <div class="il-favourite-filter"><label class="il-switch"><input type="checkbox" id="il-favourite-filter-toggle"><span class="il-slider"></span></label><label for="il-favourite-filter-toggle"><?php echo esc_html($t('filter_favourites')); ?></label></div>
+            </div>
+            <div class="il-prompts-list-area">
+                <?php if (!empty($prompts_by_origin)) : ?>
+                    <?php foreach ($prompts_by_origin as $origin_title_key => $origin_data) : if (empty($origin_data['prompts'])) continue; ?>
+                        <div class="il-prompt-origin-section">
+                            <h3 class="il-origin-title">
+                                <?php $origin_display = esc_html($origin_title_key);
+                                if (!empty($origin_data['origin_id']) && ($post = get_post($origin_data['origin_id'])) && $post->post_status === 'publish') {
+                                    $origin_display = '<a href="' . esc_url(get_permalink($origin_data['origin_id'])) . '" target="_blank">' . esc_html($origin_title_key) . ' <span class="dashicons dashicons-external"></span></a>';
+                                }
+                                echo $origin_display . ' <span class="il-origin-prompt-count">(' . count($origin_data['prompts']) . ')</span>'; ?>
+                            </h3>
+                            <ul class="il-saved-prompts-list">
+                                <?php foreach ($origin_data['prompts'] as $prompt_data_item) echo il_render_prompt_item_li($prompt_data_item); ?>
+                            </ul>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
+            <div class="il-no-prompts-message" <?php if (empty($saved_prompts_meta)) echo 'style="display: block;"'; ?>>
+                <?php echo $t('no_prompts_cta', ['prompt_library_url' => esc_url($prompt_library_url)]); ?>
+            </div>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+    add_shortcode('il_user_saved_prompts_list', 'il_display_user_saved_prompts_list_shortcode');
+
+    function il_prompt_buttons_shortcode($atts)
+    {
+        $t = il_get_language_context_and_strings()['t'];
+        $atts = shortcode_atts(['prompt_id' => ''], $atts);
+        $prompt_id = sanitize_html_class($atts['prompt_id']);
+        if (empty($prompt_id)) {
+            return current_user_can('edit_posts') ? '<p style="color:red;">[il_prompt_buttons] Error: "prompt_id" missing.</p>' : '';
+        }
+        return "<div class='il-prompt-buttons-container' data-il-button-set data-prompt-id='" . esc_attr($prompt_id) . "'>
+                    <div class='il-buttons' data-target='" . esc_attr($prompt_id) . "'>
+                        <button type='button' class='il-copy' onclick=\"IL_PROMPT_HANDLERS.copyPrompt(event, '" . esc_js($prompt_id) . "')\"><span class='dashicons dashicons-clipboard'></span><span>" . esc_html($t('copy')) . "</span></button>
+                        <button type='button' class='il-save' onclick=\"IL_PROMPT_HANDLERS.savePrompt(event, '" . esc_js($prompt_id) . "')\"><span class='dashicons dashicons-cloud-upload'></span><span>" . esc_html($t('save')) . "</span></button>
+                    </div>
+                </div>";
+    }
+    add_shortcode('il_prompt_buttons', 'il_prompt_buttons_shortcode');
+}
